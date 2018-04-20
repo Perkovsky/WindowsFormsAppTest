@@ -1,0 +1,42 @@
+!!! ВСЕ ЗАПРОСЫ ПИСАЛ ПО ПАМЯТИ БЕЗ ПРОВЕРКИ. НЕ БЫЛО ВОЗМОЖНОСТИ ПРОВЕРИТЬ
+
+
+1.
+	- В таблицу DMS (Документы движения товара. Строки) необходимо дабавить поле NDM (Номер документа) для связи с таблицей DMZ (Документы движения товара. Заголовок)
+	- Для связи таблиц DMS (Документы движения товара. Строки) и TOV (Справочник товаров) ничего добавлять не надо, т.к. поле KTOV (код товара) уже присутствуют в обеих таблицах
+
+2.
+	Нарушение нормализации базы данных присутствует. Необходимо поле SORT вынести в отдельную таблицу и в тех таблицах, где оно использовалось выполнить связь с новой таблицей с помощью первичного ключа, т.е. вместо поля SORT в таблицах TOV и DMS добавить поле SORTID (тип int) и по нему вязаться с новой таблицей. Да и вообще можно из таблицы DMS удалить поле SORT, т.к. оно присутствует в таблице TOV 
+
+3.1.
+	SELECT TOV.NTOV, SUM(DMS.KOL) AS TOTALKOL, SUM(DMS.KOL*DMS.CENA) AS TOTALSUM FROM DMS AS DMS
+	JOIN TOV AS TOV ON DMS.KTOV = TOV.KTOV
+	WHERE DMS.NDM IN (SELECT DMZ.NDM FROM DMZ AS DMZ WHERE DMZ.DDM = CONVERT(DATETIME, '2014-05-01',102))
+	GROUP BY TOV.NTOV
+	ORDER BY TOTALSUM DESC
+
+3.2.
+	UPDATE DMS   
+	SET DMS.SORT = TOV.SORT  
+	FROM DMS AS DMS  
+	INNER JOIN TOV AS TOV ON DMS.KTOV = TOV.KTOV	
+
+3.3.
+	SELECT TOV.NTOV, SUM(DMSP.KOL-DMSR.KOL) AS KOLOST, SUM(DMSP.KOL*DMSP.CENA - DMSR.KOL*DMSR.CENA) AS SUMOST FROM DMS AS DMSP
+	JOIN TOV AS TOV ON DMSP.KTOV = TOV.KTOV
+	JOIN DMS AS DMSR ON DMSP.KTOV = DMSR.KTOV
+	WHERE DMSP.NDM IN (SELECT DMZ.NDM FROM DMZ AS DMZ WHERE DMZ.PR = 1) AND DMSR.NDM IN (SELECT DMZ.NDM FROM DMZ AS DMZ WHERE DMZ.PR = 2)
+	GROUP BY TOV.NTOV
+	ORDER BY TOV.NTOV
+
+3.4.
+	INSERT INTO DMZ (DDM, NDM, PR) 
+	VALUES (GETDATE(), ISNULL((SELECT MAX(NDM) FROM DMZ), 0) + 1, IIF(ISNULL((SELECT Count(*) FROM DMZ WHERE PR=1), 0) > ISNULL((SELECT Count(*) FROM DMZ WHERE PR=2), 0), 2, 1))
+
+3.5.
+	DECLARE @minNum INT, @maxNum INT
+	SELECT @minNum=MIN(NDM), @maxNum=MAX(NDM) FROM DMS
+	INSERT INTO DMS (NDM, KTOV, KOL, CENA, SORT)  
+	SELECT @maxNum, KTOV, KOL, CENA, SORT 
+	FROM DMS AS DMSMIN 
+	WHERE DMSMIN.NDM = @minNum AND DMSMIN.KTOV NOT IN (SELECT KTOV FROM DMS WHERE NDM = @maxNum)
